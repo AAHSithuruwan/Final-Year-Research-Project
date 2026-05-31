@@ -263,7 +263,7 @@ def save_cleaned_dataset(df, input_parquet_file_path, output_folder_path):
 
     output_folder_path.mkdir(parents=True, exist_ok=True)
 
-    output_file_path = output_folder_path / f"{input_parquet_file_path.stem}_cleaned.parquet"
+    output_file_path = output_folder_path / f"gooddocs_v0_cleaned.parquet"
 
     df.to_parquet(output_file_path, index=False, engine="pyarrow")
 
@@ -302,7 +302,7 @@ def save_cleaning_summary_markdown(original_df, cleaned_df, input_parquet_file_p
 
     output_folder_path.mkdir(parents=True, exist_ok=True)
 
-    summary_file_path = output_folder_path / f"{input_parquet_file_path.stem}_cleaning_summary.md"
+    summary_file_path = output_folder_path / f"gooddocs_v0_cleaning_summary.md"
 
     original_rows = len(original_df)
     cleaned_rows = len(cleaned_df)
@@ -324,7 +324,7 @@ def save_cleaning_summary_markdown(original_df, cleaned_df, input_parquet_file_p
         file.write("## Input and Output Information\n\n")
         file.write(f"- **Input file:** `{input_parquet_file_path}`\n")
         file.write(f"- **Output folder:** `{output_folder_path}`\n")
-        file.write(f"- **Cleaned file:** `{input_parquet_file_path.stem}_cleaned.parquet`\n\n")
+        file.write(f"- **Cleaned file:** `gooddocs_v0_cleaned.parquet`\n\n")
 
         file.write("## Row Summary\n\n")
         file.write("| Metric | Count |\n")
