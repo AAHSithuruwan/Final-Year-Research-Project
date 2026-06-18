@@ -497,7 +497,7 @@
   },
 
   "minimum_threshold": {
-    "minimum_enterprise_score": 100,
+    "minimum_enterprise_score": 30,
     "minimum_doc_count": 50,
     "minimum_content_length": 20000
   }
