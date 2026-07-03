@@ -6,7 +6,7 @@ from src.github_api.github_api_utils import create_github_headers, call_github_a
 
 GITHUB_SEARCH_ISSUES_ENDPOINT = "https://api.github.com/search/issues"
 
-#python -m src.preprocess_data.fetch_maintenance_data.fetch_issue_closure_rate
+#python -m src.fetch_maintenance_data.fetch_issue_closure_rate
 
 
 # Read the selected Gooddocs_v0 Parquet file

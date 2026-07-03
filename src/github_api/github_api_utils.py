@@ -101,3 +101,93 @@ def call_github_api(url, headers, params=None, max_retries=3):
         return None
 
     return None
+
+
+# Call a paginated GitHub API endpoint with retry and rate-limit handling
+def call_github_paginated_api(url, headers, params=None, max_retries=3, request_delay_seconds=1):
+    data_list = []
+    current_url = url
+    current_params = params
+    current_page_count = 0
+
+    while current_url is not None:
+        response = None
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = requests.get(
+                    current_url,
+                    headers=headers,
+                    params=current_params,
+                    timeout=30
+                )
+
+            except requests.exceptions.RequestException as error:
+                print(f"\nGitHub API request error: {error}")
+
+                if attempt < max_retries:
+                    wait_before_retry_failed_request(attempt)
+                    continue
+
+                return None
+
+            if response.status_code == 200:
+                break
+
+            if response.status_code in [403, 429]:
+                wait_for_rate_limit_reset(response)
+
+                if attempt < max_retries:
+                    wait_before_retry_failed_request(attempt)
+                    continue
+
+            if response.status_code >= 500:
+                print(f"\nGitHub server error: {response.status_code}")
+
+                if attempt < max_retries:
+                    wait_before_retry_failed_request(attempt)
+                    continue
+
+            print("\nGitHub API request failed.")
+            print(f"Status code: {response.status_code}")
+            print(f"Response: {response.text}")
+
+            return None
+
+        if response is None or response.status_code != 200:
+            return None
+
+        data = response.json()
+
+        if not isinstance(data, list):
+            print("\nUnexpected GitHub API response format.")
+            print("Expected a list response for paginated endpoint.")
+            return None
+
+        data_list.extend(data)
+
+        current_page_count += 1
+        print(f"Fetched page {current_page_count} with {len(data)} items. Total items fetched: {len(data_list)}")
+
+        link_header = response.headers.get("Link")
+        next_url = None
+
+        if link_header:
+            links = requests.utils.parse_header_links(
+                link_header.rstrip(">").replace(">,", ",<")
+            )
+
+            for link in links:
+                if link.get("rel") == "next":
+                    next_url = link.get("url")
+                    break
+
+        current_url = next_url
+
+        # The next URL already contains query parameters.
+        current_params = None
+
+        if current_url is not None:
+            time.sleep(request_delay_seconds)
+
+    return data_list
