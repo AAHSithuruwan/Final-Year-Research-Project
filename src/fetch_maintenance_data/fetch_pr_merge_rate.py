@@ -1,7 +1,6 @@
 import time
 import pandas as pd
 from pathlib import Path
-
 from src.github_api.github_api_utils import create_github_headers, call_github_api
 
 
