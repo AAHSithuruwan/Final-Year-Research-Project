@@ -126,10 +126,11 @@ def get_github_avg_issue_comment_count_for_repository(owner, repo, headers, requ
     if github_total_issues is None or github_total_issue_comments is None:
         github_avg_issue_comment_count = None
 
-    if github_total_issues == 0:
+    elif github_total_issues == 0 or github_total_issue_comments == 0:
         github_avg_issue_comment_count = None
 
-    github_avg_issue_comment_count = github_total_issue_comments / github_total_issues
+    else:
+        github_avg_issue_comment_count = github_total_issue_comments / github_total_issues
 
     return {
         "github_total_issues": github_total_issues,
