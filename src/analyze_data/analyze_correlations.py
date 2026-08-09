@@ -7,7 +7,7 @@ from pathlib import Path
 from scipy.stats import spearmanr, ConstantInputWarning
 
 
-MAINTENANCE_SCORE_COLUMN = "software_maintenance_score"
+MAINTENANCE_SCORE_COLUMN = "software_maintenance_efficiency_score"
 
 DOCUMENTATION_METRIC_COLUMNS = [
     "documentation_completeness_score",
@@ -52,7 +52,7 @@ def read_parquet_file(parquet_file_path):
 
 
 # Validate required columns
-# Must have "repo_id" and "software_maintenance_score" columns
+# Must have "repo_id" and "software_maintenance_efficiency_score" columns
 # Must have at least one documentation quality metric column
 def validate_required_columns(df):
     required_columns = [
@@ -136,29 +136,10 @@ def get_correlation_strength(correlation_value):
         return "Very strong"
 
 
-# Decide whether to keep or remove a documentation metric
-# The selected documentation metrics will be used to create the final documentation quality score
-def get_metric_selection_decision(
-    spearman_correlation,
-    spearman_p_value,
-    correlation_threshold,
-    p_value_threshold
-):
-    if pd.isna(spearman_correlation) or pd.isna(spearman_p_value):
-        return "Remove"
-
-    if abs(spearman_correlation) >= correlation_threshold and spearman_p_value < p_value_threshold:
-        return "Keep"
-
-    return "Remove"
-
-
 # Calculate Spearman correlation for one documentation metric
 def calculate_correlation_for_metric(
     analysis_df,
-    metric_column,
-    correlation_threshold,
-    p_value_threshold
+    metric_column
 ):
     # Keep only the Metric Column and the Maintenance Score Column
     metric_target_df = analysis_df[
@@ -176,7 +157,6 @@ def calculate_correlation_for_metric(
             "spearman_p_value": np.nan,
             "absolute_spearman_correlation": np.nan,
             "correlation_strength": "Not available",
-            "decision": "Remove"
         }
 
     metric_values = metric_target_df[metric_column]
@@ -191,8 +171,7 @@ def calculate_correlation_for_metric(
             "spearman_correlation": np.nan,
             "spearman_p_value": np.nan,
             "absolute_spearman_correlation": np.nan,
-            "correlation_strength": "Not available",
-            "decision": "Remove"
+            "correlation_strength": "Not available"
         }
 
     # Calculate Spearman correlation and p-value
@@ -209,31 +188,20 @@ def calculate_correlation_for_metric(
         absolute_spearman_correlation
     )
 
-    # Get decision to keep or remove the metric based on absolute correlation and p-value thresholds
-    decision = get_metric_selection_decision(
-        spearman_correlation=absolute_spearman_correlation,
-        spearman_p_value=spearman_p_value,
-        correlation_threshold=correlation_threshold,
-        p_value_threshold=p_value_threshold
-    )
-
     return {
         "metric_name": metric_column,
         "sample_size": sample_size,
         "spearman_correlation": spearman_correlation,
         "spearman_p_value": spearman_p_value,
         "absolute_spearman_correlation": absolute_spearman_correlation,
-        "correlation_strength": correlation_strength,
-        "decision": decision
+        "correlation_strength": correlation_strength
     }
 
 
 # Calculate Spearman correlation for all documentation metrics
 def calculate_correlations_for_all_metrics(
     analysis_df,
-    documentation_metric_columns,
-    correlation_threshold=0.20,
-    p_value_threshold=0.05
+    documentation_metric_columns
 ):
     correlation_rows = []
 
@@ -244,9 +212,7 @@ def calculate_correlations_for_all_metrics(
 
         correlation_row = calculate_correlation_for_metric(
             analysis_df=analysis_df,
-            metric_column=metric_column,
-            correlation_threshold=correlation_threshold,
-            p_value_threshold=p_value_threshold
+            metric_column=metric_column
         )
 
         correlation_rows.append(correlation_row)
@@ -277,6 +243,16 @@ def save_correlation_results(correlation_results_df, output_folder_path):
     return parquet_output_file_path
 
 
+# Format figure label for better readability
+def format_figure_label(column_name):
+    return (
+        column_name
+        .replace("_score", "")
+        .replace("_", " ")
+        .title()
+    )
+
+
 # Create full Spearman correlation heatmap
 # This measures the correlation between all documentation quality metrics and the software maintenance efficiency score
 def create_full_correlation_heatmap(
@@ -290,6 +266,10 @@ def create_full_correlation_heatmap(
     heatmap_columns = documentation_metric_columns + [MAINTENANCE_SCORE_COLUMN]
 
     heatmap_df = analysis_df[heatmap_columns].copy()
+
+    heatmap_df = heatmap_df.rename(
+        columns=lambda column_name: format_figure_label(column_name)
+    )
 
     correlation_matrix = heatmap_df.corr(method="spearman")
 
@@ -306,7 +286,7 @@ def create_full_correlation_heatmap(
         cbar=True
     )
 
-    plt.title("Full Spearman Correlation Heatmap: Documentation Quality Metrics and Maintenance Efficiency Score")
+    # plt.title("Full Spearman Correlation Heatmap: Documentation Quality Metrics and Maintenance Efficiency Score")
     plt.xticks(rotation=45, ha="right")
     plt.yticks(rotation=0)
     plt.tight_layout()
@@ -339,6 +319,18 @@ def create_focused_correlation_heatmap(
 
     focused_correlation_df = focused_correlation_df.set_index("metric_name")
 
+    focused_correlation_df = focused_correlation_df.rename(
+        index=lambda metric_name: format_figure_label(metric_name)
+    )
+
+    focused_correlation_df.index.name = "Documentation Quality Metric"
+
+    focused_correlation_df = focused_correlation_df.rename(
+        columns={
+            "spearman_correlation": "Spearman Correlation"
+        }
+    )
+
     focused_correlation_output_file_path = output_folder_path / "focused_spearman_correlation_heatmap.png"
 
     plt.figure(figsize=(8, max(6, len(focused_correlation_df) * 0.4)))
@@ -348,12 +340,15 @@ def create_focused_correlation_heatmap(
         annot=True,
         fmt=".2f",
         linewidths=0.5,
-        cbar=True
+        cbar=True,
+        cbar_kws={
+            "pad": 0.08
+        }
     )
 
-    plt.title("Focused Spearman Correlation Heatmap: Documentation Quality Metrics vs Software Maintenance Efficiency Score")
-    plt.xlabel("Software Maintenance Efficiency Score")
-    plt.ylabel("Documentation Quality Metrics")
+    # plt.title("Focused Spearman Correlation Heatmap: Documentation Quality Metrics vs Software Maintenance Efficiency Score")
+    # plt.xlabel("Software Maintenance Efficiency Score")
+    # plt.ylabel("Documentation Quality Metrics")
     plt.tight_layout()
 
     plt.savefig(
@@ -381,56 +376,57 @@ def create_ranked_correlation_bar_chart(
         subset=["spearman_correlation"]
     ).copy()
 
-    bar_chart_output_file_path = output_folder_path / "spearman_correlation_bar_chart.png"
-
     bar_chart_df = bar_chart_df.sort_values(
         by="spearman_correlation",
         ascending=False
     )
 
+    # Create readable metric labels only for display
+    bar_chart_df["display_metric_name"] = bar_chart_df["metric_name"].apply(
+        format_figure_label
+    )
+
+    bar_chart_output_file_path = output_folder_path / "spearman_correlation_bar_chart.png"
+
     plt.figure(figsize=(12, max(7, len(bar_chart_df) * 0.45)))
 
-    sns.barplot(
+    ax = sns.barplot(
         data=bar_chart_df,
         x="spearman_correlation",
-        y="metric_name"
+        y="display_metric_name"
     )
 
     plt.axvline(0, linestyle="--", linewidth=1)
-    plt.title("Documentation Quality Metrics Ranked by Spearman Correlation")
-    plt.xlabel("Spearman Correlation with Software Maintenance Efficiency Score")
+
+    # Add right padding
+    x_min = bar_chart_df["spearman_correlation"].min()
+    x_max = bar_chart_df["spearman_correlation"].max()
+    x_range = x_max - x_min
+
+    if x_range == 0:
+        x_range = 0.1
+
+    plt.xlim(
+        min(0, x_min) - (x_range * 0.10),
+        x_max + (x_range * 0.20)
+    )
+
+    plt.xlabel("Spearman Correlation with Software Maintenance Efficiency")
     plt.ylabel("Documentation Quality Metric")
     plt.tight_layout()
 
     plt.savefig(
         bar_chart_output_file_path,
         dpi=300,
-        bbox_inches="tight"
+        bbox_inches="tight",
+        facecolor="white"
     )
 
     plt.close()
 
-    print(f"Ranked Spearman Correlation Bar Chart saved to: {bar_chart_output_file_path}")
+    print(f"Spearman Correlation Bar Chart saved to: {bar_chart_output_file_path}")
 
     return bar_chart_output_file_path
-
-
-# Get selected documentation metrics
-def get_selected_metric_columns(correlation_results_df):
-    selected_metric_columns = correlation_results_df[
-        correlation_results_df["decision"] == "Keep"
-    ]["metric_name"].tolist()
-
-    return selected_metric_columns
-
-
-# Get Removed documentation metrics
-def get_removed_metric_columns(correlation_results_df):
-    removed_metric_columns = correlation_results_df[
-        correlation_results_df["decision"] == "Remove"
-    ]["metric_name"].tolist()
-
-    return removed_metric_columns
 
 
 # Print summary in terminal
@@ -440,24 +436,9 @@ def print_correlation_analysis_summary(
 
     print("\nSpearman Correlation Analysis Summary")
     print(f"Metrics Analyzed: {len(correlation_results_df)}")
-    print(f"Metrics Selected to Represent Documentation Quality Score: {len(get_selected_metric_columns(correlation_results_df))}")
 
     print("\nTop Spearman Correlation Results:")
     print(correlation_results_df.head(10).to_string(index=False))
-
-    print("\nSelected Documentation Quality Metrics:")
-    if get_selected_metric_columns(correlation_results_df):
-        for column in get_selected_metric_columns(correlation_results_df):
-            print(f"- {column}")
-    else:
-        print("No metrics selected.")
-
-    print("\nRemoved Documentation Quality Metrics:")
-    if get_removed_metric_columns(correlation_results_df):
-        for column in get_removed_metric_columns(correlation_results_df):
-            print(f"- {column}")
-    else:
-        print("No metrics removed.")
 
 
 # Save Markdown summary
@@ -466,8 +447,6 @@ def save_correlation_analysis_summary_markdown(
     correlation_results_df,
     input_file_path,
     output_folder_path,
-    correlation_threshold,
-    p_value_threshold,
     output_files
 ):
     output_folder_path = Path(output_folder_path)
@@ -487,33 +466,16 @@ def save_correlation_analysis_summary_markdown(
         file.write("## Target Variable\n\n")
         file.write(f"- `{MAINTENANCE_SCORE_COLUMN}`\n\n")
 
-        file.write("## Decision Rule\n\n")
-        file.write("A Documentation Quality Metric was selected if it satisfied both conditions:\n\n")
-        file.write(f"- Absolute Spearman Correlation >= `{correlation_threshold}`\n")
-        file.write(f"- Spearman P-Value < `{p_value_threshold}`\n\n")
-
         file.write("## Dataset Summary\n\n")
         file.write("| Item | Count |\n")
         file.write("|---|---:|\n")
         file.write(f"| Repositories Analyzed | {len(analysis_df)} |\n")
         file.write(f"| Documentation Quality Metrics Analyzed | {len(correlation_results_df)} |\n")
-        file.write(f"| Documentation Quality Metrics Selected to Represent Documentation Quality Score | {len(get_selected_metric_columns(correlation_results_df))} |\n")
 
-        file.write("## Selected Documentation Quality Metrics\n\n")
+        file.write("## Analyzed Documentation Quality Metrics\n\n")
 
-        if len(get_selected_metric_columns(correlation_results_df)) > 0:
-            for column in get_selected_metric_columns(correlation_results_df):
-                file.write(f"- `{column}`\n")
-        else:
-            file.write("No Documentation Quality Metrics satisfied the selection rule.\n")
-
-        file.write("\n## Removed Documentation Quality Metrics\n\n")
-        
-        if len(get_removed_metric_columns(correlation_results_df)) > 0:
-            for column in get_removed_metric_columns(correlation_results_df):
-                file.write(f"- `{column}`\n")
-        else:
-            file.write("No Documentation Quality Metrics were removed.\n")
+        for metric_name in correlation_results_df["metric_name"]:
+            file.write(f"- `{metric_name}`\n")
 
         file.write("\n## Output Files\n\n")
         for output_name, output_path in output_files.items():
@@ -527,9 +489,7 @@ def save_correlation_analysis_summary_markdown(
 # Common method to run Spearman correlation analysis
 def spearman_correlation_analysis(
     input_file_path,
-    output_folder_path,
-    correlation_threshold=0.20,
-    p_value_threshold=0.05
+    output_folder_path
 ):
     original_df, input_file_path = read_parquet_file(input_file_path)
 
@@ -544,9 +504,7 @@ def spearman_correlation_analysis(
 
     correlation_results_df = calculate_correlations_for_all_metrics(
         analysis_df=analysis_df,
-        documentation_metric_columns=documentation_metric_columns,
-        correlation_threshold=correlation_threshold,
-        p_value_threshold=p_value_threshold
+        documentation_metric_columns=documentation_metric_columns
     )
 
     parquet_output_file_path = save_correlation_results(
@@ -586,8 +544,6 @@ def spearman_correlation_analysis(
         correlation_results_df=correlation_results_df,
         input_file_path=input_file_path,
         output_folder_path=output_folder_path,
-        correlation_threshold=correlation_threshold,
-        p_value_threshold=p_value_threshold,
         output_files=output_files
     )
 
@@ -601,24 +557,7 @@ if __name__ == "__main__":
     output_folder_path = input("Enter the output folder path: ").strip()
     output_folder_path = output_folder_path.strip('"').strip("'")
 
-    correlation_threshold_text = input("Enter Correlation Threshold [default 0.20]: ").strip()
-    p_value_threshold_text = input("Enter P-Value threshold [default 0.05]: ").strip()
-
-    correlation_threshold = (
-        float(correlation_threshold_text)
-        if correlation_threshold_text
-        else 0.20
-    )
-
-    p_value_threshold = (
-        float(p_value_threshold_text)
-        if p_value_threshold_text
-        else 0.05
-    )
-
     spearman_correlation_analysis(
         input_file_path=input_file_path,
-        output_folder_path=output_folder_path,
-        correlation_threshold=correlation_threshold,
-        p_value_threshold=p_value_threshold
+        output_folder_path=output_folder_path
     )
