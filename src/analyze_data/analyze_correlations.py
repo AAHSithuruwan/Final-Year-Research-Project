@@ -9,6 +9,8 @@ from scipy.stats import spearmanr, ConstantInputWarning
 
 MAINTENANCE_SCORE_COLUMN = "software_maintenance_efficiency_score"
 
+DOCUMENTATION_QUALITY_SCORE_COLUMN = "documentation_quality_score"
+
 DOCUMENTATION_METRIC_COLUMNS = [
     "documentation_completeness_score",
     "installation_guidance_score",
@@ -89,12 +91,31 @@ def normalize_repo_id_column(df):
     return df
 
 
+# Create documentation quality score
+# This score is calculated using the average of all selected documentation quality metrics
+def create_documentation_quality_score(df, documentation_metric_columns):
+    df = df.copy()
+
+    df[DOCUMENTATION_QUALITY_SCORE_COLUMN] = df[
+        documentation_metric_columns
+    ].mean(axis=1)
+
+    print("\nDocumentation Quality Score Created Successfully.")
+    print(f"Created Column: {DOCUMENTATION_QUALITY_SCORE_COLUMN}")
+
+    return df
+
+
 # Convert analysis columns to numeric
 # Drop rows with missing maintenance efficiency score
 def prepare_analysis_dataframe(df, documentation_metric_columns):
     df = df.copy()
 
-    analysis_columns = documentation_metric_columns + [MAINTENANCE_SCORE_COLUMN]
+    analysis_columns = (
+        documentation_metric_columns
+        + [DOCUMENTATION_QUALITY_SCORE_COLUMN]
+        + [MAINTENANCE_SCORE_COLUMN]
+    )
 
     for column in analysis_columns:
         df[column] = pd.to_numeric(df[column], errors="coerce")
@@ -222,6 +243,78 @@ def calculate_correlations_for_all_metrics(
     print("\nSpearman Correlation Analysis Completed Successfully.")
 
     return correlation_results_df
+
+
+# Calculate Spearman correlation between the two main research variables
+def calculate_main_score_correlation(analysis_df):
+
+    main_score_df = analysis_df[
+        [
+            DOCUMENTATION_QUALITY_SCORE_COLUMN,
+            MAINTENANCE_SCORE_COLUMN
+        ]
+    ].dropna()
+
+    sample_size = len(main_score_df)
+
+    if sample_size < 3:
+        return {
+            "metric_name": DOCUMENTATION_QUALITY_SCORE_COLUMN,
+            "sample_size": sample_size,
+            "spearman_correlation": np.nan,
+            "spearman_p_value": np.nan,
+            "absolute_spearman_correlation": np.nan,
+            "correlation_strength": "Not available"
+        }
+
+    documentation_quality_values = main_score_df[
+        DOCUMENTATION_QUALITY_SCORE_COLUMN
+    ]
+
+    maintenance_efficiency_values = main_score_df[
+        MAINTENANCE_SCORE_COLUMN
+    ]
+
+    if (
+        documentation_quality_values.nunique() <= 1
+        or maintenance_efficiency_values.nunique() <= 1
+    ):
+        return {
+            "metric_name": DOCUMENTATION_QUALITY_SCORE_COLUMN,
+            "sample_size": sample_size,
+            "spearman_correlation": np.nan,
+            "spearman_p_value": np.nan,
+            "absolute_spearman_correlation": np.nan,
+            "correlation_strength": "Not available"
+        }
+
+    spearman_correlation, spearman_p_value = spearmanr(
+        documentation_quality_values,
+        maintenance_efficiency_values
+    )
+
+    absolute_spearman_correlation = abs(spearman_correlation)
+
+    correlation_strength = get_correlation_strength(
+        absolute_spearman_correlation
+    )
+
+    result = {
+        "metric_name": DOCUMENTATION_QUALITY_SCORE_COLUMN,
+        "sample_size": sample_size,
+        "spearman_correlation": spearman_correlation,
+        "spearman_p_value": spearman_p_value,
+        "absolute_spearman_correlation": absolute_spearman_correlation,
+        "correlation_strength": correlation_strength
+    }
+
+    print("\nTechnical Documentation Quality vs Software Maintenance Efficiency")
+    print(f"Sample Size: {sample_size}")
+    print(f"Spearman Correlation: {spearman_correlation:.6f}")
+    print(f"P-value: {spearman_p_value:.6f}")
+    print(f"Correlation Strength: {correlation_strength}")
+
+    return result
 
 
 # Save correlation results as a Parquet File
@@ -441,48 +534,64 @@ def print_correlation_analysis_summary(
     print(correlation_results_df.head(10).to_string(index=False))
 
 
-# Save Markdown summary
-def save_correlation_analysis_summary_markdown(
-    analysis_df,
-    correlation_results_df,
-    input_file_path,
-    output_folder_path,
-    output_files
-):
-    output_folder_path = Path(output_folder_path)
-    output_folder_path.mkdir(parents=True, exist_ok=True)
+# Save Markdown summary 
+def save_correlation_analysis_summary_markdown( 
+    analysis_df, 
+    correlation_results_df, 
+    main_score_correlation, 
+    input_file_path, 
+    output_folder_path, 
+    output_files 
+): 
+    output_folder_path = Path(output_folder_path) 
+    output_folder_path.mkdir(parents=True, exist_ok=True) 
+ 
+    summary_file_path = output_folder_path / "spearman_correlation_analysis_summary.md" 
+ 
+    with open(summary_file_path, "w", encoding="utf-8") as file: 
+        file.write("# Spearman Correlation Analysis Summary\n\n") 
+ 
+        file.write("## Input File\n\n") 
+        file.write(f"- `{input_file_path}`\n\n") 
+ 
+        file.write("## Correlation Method\n\n") 
+        file.write("Spearman Correlation was used to measure the relationship between each Documentation Quality Metric and Software Maintenance Efficiency.\n\n") 
+ 
+        file.write("## Target Variable\n\n") 
+        file.write(f"- `{MAINTENANCE_SCORE_COLUMN}`\n\n") 
 
-    summary_file_path = output_folder_path / "spearman_correlation_analysis_summary.md"
+        file.write("## Documentation Quality Score\n\n")
+        file.write("The Documentation Quality Score was calculated as the average of all selected documentation quality metrics.\n\n")
+        file.write(f"- `{DOCUMENTATION_QUALITY_SCORE_COLUMN}`\n\n")
 
-    with open(summary_file_path, "w", encoding="utf-8") as file:
-        file.write("# Spearman Correlation Analysis Summary\n\n")
+        file.write("## Overall Documentation Quality and Software Maintenance Efficiency Correlation\n\n")
+        file.write("Spearman Correlation was used to measure the relationship between the overall Documentation Quality Score and the Software Maintenance Efficiency Score.\n\n")
 
-        file.write("## Input File\n\n")
-        file.write(f"- `{input_file_path}`\n\n")
-
-        file.write("## Correlation Method\n\n")
-        file.write("Spearman Correlation was used to measure the relationship between each Documentation Quality Metric and Software Maintenance Efficiency.\n\n")
-
-        file.write("## Target Variable\n\n")
-        file.write(f"- `{MAINTENANCE_SCORE_COLUMN}`\n\n")
-
-        file.write("## Dataset Summary\n\n")
-        file.write("| Item | Count |\n")
+        file.write("| Measurement | Result |\n")
         file.write("|---|---:|\n")
-        file.write(f"| Repositories Analyzed | {len(analysis_df)} |\n")
-        file.write(f"| Documentation Quality Metrics Analyzed | {len(correlation_results_df)} |\n")
-
-        file.write("## Analyzed Documentation Quality Metrics\n\n")
-
-        for metric_name in correlation_results_df["metric_name"]:
-            file.write(f"- `{metric_name}`\n")
-
-        file.write("\n## Output Files\n\n")
-        for output_name, output_path in output_files.items():
-            file.write(f"- **{output_name}:** `{output_path}`\n")
-
-    print(f"Spearman Correlation Analysis Summary Markdown saved to: {summary_file_path}")
-
+        file.write(f"| Sample Size | {main_score_correlation['sample_size']} |\n")
+        file.write(f"| Spearman Correlation | {main_score_correlation['spearman_correlation']:.6f} |\n")
+        file.write(f"| P-value | {main_score_correlation['spearman_p_value']:.6f} |\n")
+        file.write(f"| Absolute Spearman Correlation | {main_score_correlation['absolute_spearman_correlation']:.6f} |\n")
+        file.write(f"| Correlation Strength | {main_score_correlation['correlation_strength']} |\n\n")
+ 
+        file.write("## Dataset Summary\n\n") 
+        file.write("| Item | Count |\n") 
+        file.write("|---|---:|\n") 
+        file.write(f"| Repositories Analyzed | {len(analysis_df)} |\n") 
+        file.write(f"| Documentation Quality Metrics Analyzed | {len(correlation_results_df)} |\n") 
+ 
+        file.write("## Analyzed Documentation Quality Metrics\n\n") 
+ 
+        for metric_name in correlation_results_df["metric_name"]: 
+            file.write(f"- `{metric_name}`\n") 
+ 
+        file.write("\n## Output Files\n\n") 
+        for output_name, output_path in output_files.items(): 
+            file.write(f"- **{output_name}:** `{output_path}`\n") 
+ 
+    print(f"Spearman Correlation Analysis Summary Markdown saved to: {summary_file_path}") 
+ 
     return summary_file_path
 
 
@@ -497,9 +606,18 @@ def spearman_correlation_analysis(
 
     documentation_metric_columns = validate_required_columns(original_df)
 
+    original_df = create_documentation_quality_score(
+        df=original_df,
+        documentation_metric_columns=documentation_metric_columns
+    )
+
     analysis_df = prepare_analysis_dataframe(
         df=original_df,
         documentation_metric_columns=documentation_metric_columns
+    )
+
+    main_score_correlation = calculate_main_score_correlation(
+        analysis_df=analysis_df
     )
 
     correlation_results_df = calculate_correlations_for_all_metrics(
@@ -542,6 +660,7 @@ def spearman_correlation_analysis(
     summary_file_path = save_correlation_analysis_summary_markdown(
         analysis_df=analysis_df,
         correlation_results_df=correlation_results_df,
+        main_score_correlation=main_score_correlation,
         input_file_path=input_file_path,
         output_folder_path=output_folder_path,
         output_files=output_files
